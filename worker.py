@@ -494,7 +494,7 @@ if __name__ == "__main__":
             
             if gpulocal:
                 with open("gpulocal","rt") as f:
-                    filtered = f.read().strip()
+                    filtered = int(f.read().strip())
                 os.remove("gpulocal")
             else:
                 with zipfile.ZipFile("gpujobdone.zip", 'r') as zip_ref:
