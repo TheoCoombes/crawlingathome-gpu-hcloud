@@ -356,7 +356,7 @@ if __name__ == "__main__":
     # normally it reads while client.jobCount() > 0
     while True: # since we are so early into the project...
         try:
-            lastext = f". Last job duration: {last}"
+            lastext = f". Last job eff: {lasteff}"
 
             start = time.time()
             start0 = start
@@ -408,12 +408,7 @@ if __name__ == "__main__":
             with open("crawlingathome-gpu-hcloud/blocklists/failed-domains.txt","r") as f:
                 failed = set(f.read().splitlines())
             blocked |= failed # merge the 2 sets and use this to reduce the number of attempted links, reduce crawling time.
-            '''
-            duplicates = set()
-            with open("crawlingathome-gpu-hcloud/blocklists/5Mduplicates.txt","rt") as f:
-                duplicates = set(f.read().splitlines())
-            print (f"duplicates of size {len(duplicates)}")
-            '''
+
             bloom = BloomFilter(max_elements=10000000, error_rate=0.01, filename=("crawlingathome-gpu-hcloud/blocklists/bloom.bin",-1))
 
             while True:
@@ -492,8 +487,8 @@ if __name__ == "__main__":
             if abort:
                 os.remove("gpuabort")
                 continue
-            print()
-            print(f"receiving results from GPU")
+            
+            print(f"receiving results from GPU after {round((time.time()-start2),2)} waiting time")
 
             # GPU results received
             
@@ -529,10 +524,10 @@ if __name__ == "__main__":
                 # update job stats to be displayed on next run on leaderboard
                 filtered = len(filtered_df)
             last = round(time.time() - start0)
-            #lasteff = round( (filtered_df.shape[0] * 100) / (time.time() - start0)) / 100
+            lasteff = round( filtered / (time.time() - start0) , 2)
 
             # we use job efficiency as KPI, i.e. the number of final pairs divided by total time taken by the entire job
-            print(f"job completed in {last} seconds")
+            print(f"job completed with {filtered} in {last} seconds")
             #print(f"job efficiency {lasteff} pairs/sec")
 
             while True:
