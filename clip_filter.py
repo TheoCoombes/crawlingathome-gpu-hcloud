@@ -77,7 +77,6 @@ def df_clipfilter(df):
 
     for i, img_embed in enumerate(img_embedding):
         if similarities[i] < sim_threshold:
-            #df.drop(i, inplace=True)
             df.at[i, 'dropped'] = True
             continue
 
@@ -88,19 +87,18 @@ def df_clipfilter(df):
         if nsfw_prob[0] < 19 and nsfw_prob[1] < 19:
             df.at[i, "NSFW"] = "UNLIKELY"
             tmp_embed.append(img_embed)
+            df.at[i, 'dropped'] = False
             continue
         elif nsfw_prob[0] >= 19 and nsfw_prob[1] >= 19:
             df.at[i, "NSFW"] = "NSFW"
 
         underage_prob = clip_filter.prob(img_embed, clip_filter.underaged_categories)
         if underage_prob[0] < 4 or underage_prob[1] < 4 or any(x in df.at[i, "TEXT"] for x in underaged_text):
-            #df.drop(i, inplace=True)
             df.at[i, 'dropped'] = True
             continue
 
         animal_prob = clip_filter.prob(img_embed, clip_filter.animal_categories)
         if animal_prob[0] > 20:
-            #df.drop(i, inplace=True)
             df.at[i, 'dropped'] = True
             continue
         tmp_embed.append(img_embed)
