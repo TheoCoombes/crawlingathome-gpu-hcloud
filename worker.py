@@ -373,15 +373,10 @@ if __name__ == "__main__":
                 os.mkdir(".tmp")
 
                 # get new job and download the wat file
-                while True:
-                    try:
-                        client.newJob()
-                        client.downloadShard()
-                    except:
-                        time.sleep(30)
-                        continue
-                    break
                 
+                client.newJob()
+                client.downloadShard()
+        
                 # retrieve job details and determine what part of the wat file to parse
                 first_sample_id = int(client.start_id)
                 last_sample_id = int(client.end_id)
@@ -412,14 +407,8 @@ if __name__ == "__main__":
 
                 bloom = BloomFilter(max_elements=10000000, error_rate=0.01, filename=("crawlingathome-gpu-hcloud/blocklists/bloom.bin",-1))
 
-                while True:
-                    try:
-                        client.log("Processing shard" + lastext)
-                    except:
-                        time.sleep(5)
-                        continue
-                    break
-
+                client.log("Processing shard" + lastext)
+        
                 # parse valid links from wat file
                 with open("shard.wat", "r") as infile:
                     parsed_data, deduped = parse_wat(infile, start_index, lines, blocked, bloom)
@@ -439,13 +428,7 @@ if __name__ == "__main__":
                 start = time.time()
                 print (f"this job has {lastlinks} links and deduped {deduped} links")
 
-                while True:
-                    try:
-                        client.log("Downloading images" + lastext)
-                    except:
-                        time.sleep(5)
-                        continue
-                    break
+                client.log("Downloading images" + lastext)
                 
                 # attempt to download validated links and save to disk for stats and blocking lists
                 dlparse_df = dl_wat( parsed_data, first_sample_id)
@@ -465,14 +448,8 @@ if __name__ == "__main__":
                 with open('semaphore', 'w') as f:
                     pass
 
-                while True:
-                    try:
-                        client.log("@GPU: dropping NSFW keywords" + lastext)
-                    except:
-                        time.sleep(5)
-                        continue
-                    break
-
+                client.log("@GPU: dropping NSFW keywords" + lastext)
+        
                 # wait for GPU results
                 print (f"waiting for GPU node to complete job")
                 status = False
@@ -531,13 +508,7 @@ if __name__ == "__main__":
                 print(f"job completed with {filtered} in {last} seconds")
                 #print(f"job efficiency {lasteff} pairs/sec")
 
-                while True:
-                    try:
-                        client.completeJob(filtered)
-                    except:
-                        time.sleep(5)
-                        continue
-                    break
+                client.completeJob(filtered)
                 
             except Exception as e:
                 print (e)
