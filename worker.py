@@ -335,210 +335,216 @@ if __name__ == "__main__":
 
     import crawlingathome_client as cah
 
-    # connect to C@H server and initialize client
-    client = None
     while True:
-        try:
-            client = cah.init(
-                url=CRAWLINGATHOME_SERVER_URL, nickname=YOUR_NICKNAME_FOR_THE_LEADERBOARD
-            )
-            break
-        except:
-            time.sleep(5)
-
-    # initialize stats variables for previous job
-    last = 0
-    lasteff = 0
-    lastcount = 0
-    lastlinks = 0
-
-    # this makes a loop to download new jobs while the script is running
-    # normally it reads while client.jobCount() > 0
-    while True: # since we are so early into the project...
-        try:
-            lastext = f". Last job eff: {lasteff}"
-
-            start = time.time()
-            start0 = start
-
-            # clear working folders for a new job
-            if os.path.exists(output_folder):
-                shutil.rmtree(output_folder, ignore_errors=True) # fix for ramdisk already existing at location
-            if os.path.exists(".tmp"):
-                shutil.rmtree(".tmp")
-
-            os.mkdir(output_folder)
-            os.mkdir(img_output_folder)
-            os.mkdir(".tmp")
-
-            # get new job and download the wat file
-            while True:
-                try:
-                    client.newJob()
-                    client.downloadShard()
-                except:
-                    time.sleep(30)
-                    continue
+        # connect to C@H server and initialize client
+        client = None
+        while True:
+            try:
+                client = cah.init(
+                    url=CRAWLINGATHOME_SERVER_URL, nickname=YOUR_NICKNAME_FOR_THE_LEADERBOARD
+                )
                 break
-            
-            # retrieve job details and determine what part of the wat file to parse
-            first_sample_id = int(client.start_id)
-            last_sample_id = int(client.end_id)
-            shard_of_chunk = client.shard_piece # TODO
+            except:
+                time.sleep(5)
 
-            fd = FileData('shard.wat')
+        # initialize stats variables for previous job
+        last = 0
+        lasteff = 0
+        lastcount = 0
+        lastlinks = 0
 
-            if shard_of_chunk == 0:
-                start_index = fd[0]
-            if shard_of_chunk == 1:
-                start_index = fd[ int(len(fd)*0.5) ]
+        # this makes a loop to download new jobs while the script is running
+        # normally it reads while client.jobCount() > 0
+        while client.jobCount() > 0 and client.isAlive():
+            try:
+                lastext = f". Last job eff: {lasteff}"
 
-            lines = int(len(fd)*0.5)
+                start = time.time()
+                start0 = start
 
-            # compute output file names base
-            out_fname = f"FIRST_SAMPLE_ID_IN_SHARD_{str(first_sample_id)}_LAST_SAMPLE_ID_IN_SHARD_{str(last_sample_id)}_{shard_of_chunk}"
-            print(time.time()-start)
-            start = time.time()
-            print (f"[crawling@home] shard id {out_fname}") # in case test fails, we need to remove bad data
+                # clear working folders for a new job
+                if os.path.exists(output_folder):
+                    shutil.rmtree(output_folder, ignore_errors=True) # fix for ramdisk already existing at location
+                if os.path.exists(".tmp"):
+                    shutil.rmtree(".tmp")
 
-            blocked = set()
-            with open("crawlingathome-gpu-hcloud/blocklists/blocklist-domain.txt","r") as f:
-                blocked = set(f.read().splitlines())
-            failed = set()
-            with open("crawlingathome-gpu-hcloud/blocklists/failed-domains.txt","r") as f:
-                failed = set(f.read().splitlines())
-            blocked |= failed # merge the 2 sets and use this to reduce the number of attempted links, reduce crawling time.
+                os.mkdir(output_folder)
+                os.mkdir(img_output_folder)
+                os.mkdir(".tmp")
 
-            bloom = BloomFilter(max_elements=10000000, error_rate=0.01, filename=("crawlingathome-gpu-hcloud/blocklists/bloom.bin",-1))
+                # get new job and download the wat file
+                while True:
+                    try:
+                        client.newJob()
+                        client.downloadShard()
+                    except:
+                        time.sleep(30)
+                        continue
+                    break
+                
+                # retrieve job details and determine what part of the wat file to parse
+                first_sample_id = int(client.start_id)
+                last_sample_id = int(client.end_id)
+                shard_of_chunk = client.shard_piece # TODO
 
-            while True:
-                try:
-                    client.log("Processing shard" + lastext)
-                except:
-                    time.sleep(5)
-                    continue
-                break
+                fd = FileData('shard.wat')
 
-            # parse valid links from wat file
-            with open("shard.wat", "r") as infile:
-                parsed_data, deduped = parse_wat(infile, start_index, lines, blocked, bloom)
-            print(time.time()-start)
-            start = time.time()
-            print ("parsed wat")
+                if shard_of_chunk == 0:
+                    start_index = fd[0]
+                if shard_of_chunk == 1:
+                    start_index = fd[ int(len(fd)*0.5) ]
 
-            # convert to dataframe and save to disk (for statistics and generating blocking lists)
-            parsed_df = pd.DataFrame(parsed_data, columns=["URL","TEXT","LICENSE"])
-            parsed_df.to_csv(output_folder + out_fname + "_parsed.csv", index=False, sep="|")
+                lines = int(len(fd)*0.5)
 
-            # attempt to spread out clusters of links pointing to the same domain name, improves crawling
-            random.shuffle(parsed_data) 
-            
-            lastlinks = len(parsed_data)
-            print(time.time()-start)
-            start = time.time()
-            print (f"this job has {lastlinks} links and deduped {deduped} links")
+                # compute output file names base
+                out_fname = f"FIRST_SAMPLE_ID_IN_SHARD_{str(first_sample_id)}_LAST_SAMPLE_ID_IN_SHARD_{str(last_sample_id)}_{shard_of_chunk}"
+                print(time.time()-start)
+                start = time.time()
+                print (f"[crawling@home] shard id {out_fname}") # in case test fails, we need to remove bad data
 
-            while True:
-                try:
-                    client.log("Downloading images" + lastext)
-                except:
-                    time.sleep(5)
-                    continue
-                break
-            
-            # attempt to download validated links and save to disk for stats and blocking lists
-            dlparse_df = dl_wat( parsed_data, first_sample_id)
-            dlparse_df.to_csv(output_folder + out_fname + ".csv", index=False, sep="|")
-            dlparse_df.to_csv(output_folder + out_fname + "_unfiltered.csv", index=False, sep="|")
-            print (f"downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
-            print (f"download efficiency {len(dlparse_df)/(time.time() - start)} img/sec")
-            print (f"crawl efficiency {lastlinks/(time.time() - start)} links/sec")
+                blocked = set()
+                with open("crawlingathome-gpu-hcloud/blocklists/blocklist-domain.txt","r") as f:
+                    blocked = set(f.read().splitlines())
+                failed = set()
+                with open("crawlingathome-gpu-hcloud/blocklists/failed-domains.txt","r") as f:
+                    failed = set(f.read().splitlines())
+                blocked |= failed # merge the 2 sets and use this to reduce the number of attempted links, reduce crawling time.
 
-            start2 = time.time()
-            
-            # at this point we need to perform CLIP filtering, then save embeddings and tfrecords of filtered images
-            # since inference is best done with GPU, this particular worker is zipping the csv and all downloaded images
-            # and sends them to the GPU node
-            shutil.make_archive("gpujob", "zip", ".", output_folder)
-            # when zip is ready, create semaphore file to signal job data is ready
-            with open('semaphore', 'w') as f:
-                pass
-
-            while True:
-                try:
-                    client.log("@GPU: dropping NSFW keywords" + lastext)
-                except:
-                    time.sleep(5)
-                    continue
-                break
-
-            # wait for GPU results
-            print (f"waiting for GPU node to complete job")
-            status = False
-            abort = False
-            gpulocal = False
-            while not (status | abort | gpulocal):
-                print(".", end = "", flush=True)
-                time.sleep(10)
-                status = os.path.exists("gpusemaphore")
-                abort = os.path.exists("gpuabort")
-                gpulocal = os.path.exists("gpulocal")
-
-            if abort:
-                os.remove("gpuabort")
-                continue
-            
-            print(f"receiving results from GPU after {round((time.time()-start2),2)} waiting time")
-
-            # GPU results received
-            
-            if gpulocal:
-                with open("gpulocal","rt") as f:
-                    filtered = int(f.read().strip())
-                os.remove("gpulocal")
-            else:
-                with zipfile.ZipFile("gpujobdone.zip", 'r') as zip_ref:
-                    zip_ref.extractall(".")
-                os.remove("gpujobdone.zip")
-                os.remove("gpusemaphore")
+                bloom = BloomFilter(max_elements=10000000, error_rate=0.01, filename=("crawlingathome-gpu-hcloud/blocklists/bloom.bin",-1))
 
                 while True:
                     try:
-                        client.log("Uploading results" + lastext)
+                        client.log("Processing shard" + lastext)
                     except:
                         time.sleep(5)
                         continue
                     break
-            
-                # reconstruct the filtered dataset from received csv, save to file and upload to dataset storage
-                filtered_df = pd.read_csv(output_folder + out_fname + ".csv", sep="|")
-                print (f"CLIP filtered {len(filtered_df)} in {round(time.time() - start2)} seconds")
-                print (f"CLIP efficiency {len(dlparse_df)/(time.time() - start2)} img/sec")
 
-                upload_gdrive(f"{output_folder}image_embedding_dict-{out_fname}.pkl")
-                upload_gdrive(f"{output_folder}crawling_at_home_{out_fname}__00000-of-00001.tfrecord")
-                upload_gdrive(output_folder + out_fname + ".csv")
-                upload_gdrive(output_folder + out_fname + "_unfiltered.csv", True)
-                upload_gdrive(output_folder + out_fname + "_parsed.csv", True)
+                # parse valid links from wat file
+                with open("shard.wat", "r") as infile:
+                    parsed_data, deduped = parse_wat(infile, start_index, lines, blocked, bloom)
+                print(time.time()-start)
+                start = time.time()
+                print ("parsed wat")
 
-                # update job stats to be displayed on next run on leaderboard
-                filtered = len(filtered_df)
-            last = round(time.time() - start0)
-            lasteff = round( filtered / (time.time() - start0) , 2)
+                # convert to dataframe and save to disk (for statistics and generating blocking lists)
+                parsed_df = pd.DataFrame(parsed_data, columns=["URL","TEXT","LICENSE"])
+                parsed_df.to_csv(output_folder + out_fname + "_parsed.csv", index=False, sep="|")
 
-            # we use job efficiency as KPI, i.e. the number of final pairs divided by total time taken by the entire job
-            print(f"job completed with {filtered} in {last} seconds")
-            #print(f"job efficiency {lasteff} pairs/sec")
+                # attempt to spread out clusters of links pointing to the same domain name, improves crawling
+                random.shuffle(parsed_data) 
+                
+                lastlinks = len(parsed_data)
+                print(time.time()-start)
+                start = time.time()
+                print (f"this job has {lastlinks} links and deduped {deduped} links")
 
-            while True:
-                try:
-                    client._markjobasdone(filtered)
-                except:
-                    time.sleep(5)
+                while True:
+                    try:
+                        client.log("Downloading images" + lastext)
+                    except:
+                        time.sleep(5)
+                        continue
+                    break
+                
+                # attempt to download validated links and save to disk for stats and blocking lists
+                dlparse_df = dl_wat( parsed_data, first_sample_id)
+                dlparse_df.to_csv(output_folder + out_fname + ".csv", index=False, sep="|")
+                dlparse_df.to_csv(output_folder + out_fname + "_unfiltered.csv", index=False, sep="|")
+                print (f"downloaded {len(dlparse_df)} in {round(time.time() - start)} seconds")
+                print (f"download efficiency {len(dlparse_df)/(time.time() - start)} img/sec")
+                print (f"crawl efficiency {lastlinks/(time.time() - start)} links/sec")
+
+                start2 = time.time()
+                
+                # at this point we need to perform CLIP filtering, then save embeddings and tfrecords of filtered images
+                # since inference is best done with GPU, this particular worker is zipping the csv and all downloaded images
+                # and sends them to the GPU node
+                shutil.make_archive("gpujob", "zip", ".", output_folder)
+                # when zip is ready, create semaphore file to signal job data is ready
+                with open('semaphore', 'w') as f:
+                    pass
+
+                while True:
+                    try:
+                        client.log("@GPU: dropping NSFW keywords" + lastext)
+                    except:
+                        time.sleep(5)
+                        continue
+                    break
+
+                # wait for GPU results
+                print (f"waiting for GPU node to complete job")
+                status = False
+                abort = False
+                gpulocal = False
+                while not (status | abort | gpulocal):
+                    print(".", end = "", flush=True)
+                    time.sleep(10)
+                    status = os.path.exists("gpusemaphore")
+                    abort = os.path.exists("gpuabort")
+                    gpulocal = os.path.exists("gpulocal")
+
+                if abort:
+                    os.remove("gpuabort")
                     continue
-                break
-            
-        except Exception as e:
-            print (e)
-            print ("Worker crashed")
+                
+                print(f"receiving results from GPU after {round((time.time()-start2),2)} waiting time")
+
+                # GPU results received
+                
+                if gpulocal:
+                    with open("gpulocal","rt") as f:
+                        filtered = int(f.read().strip())
+                    os.remove("gpulocal")
+                else:
+                    with zipfile.ZipFile("gpujobdone.zip", 'r') as zip_ref:
+                        zip_ref.extractall(".")
+                    os.remove("gpujobdone.zip")
+                    os.remove("gpusemaphore")
+
+                    while True:
+                        try:
+                            client.log("Uploading results" + lastext)
+                        except:
+                            time.sleep(5)
+                            continue
+                        break
+                
+                    # reconstruct the filtered dataset from received csv, save to file and upload to dataset storage
+                    filtered_df = pd.read_csv(output_folder + out_fname + ".csv", sep="|")
+                    print (f"CLIP filtered {len(filtered_df)} in {round(time.time() - start2)} seconds")
+                    print (f"CLIP efficiency {len(dlparse_df)/(time.time() - start2)} img/sec")
+
+                    upload_gdrive(f"{output_folder}image_embedding_dict-{out_fname}.pkl")
+                    upload_gdrive(f"{output_folder}crawling_at_home_{out_fname}__00000-of-00001.tfrecord")
+                    upload_gdrive(output_folder + out_fname + ".csv")
+                    upload_gdrive(output_folder + out_fname + "_unfiltered.csv", True)
+                    upload_gdrive(output_folder + out_fname + "_parsed.csv", True)
+
+                    # update job stats to be displayed on next run on leaderboard
+                    filtered = len(filtered_df)
+                last = round(time.time() - start0)
+                lasteff = round( filtered / (time.time() - start0) , 2)
+
+                # we use job efficiency as KPI, i.e. the number of final pairs divided by total time taken by the entire job
+                print(f"job completed with {filtered} in {last} seconds")
+                #print(f"job efficiency {lasteff} pairs/sec")
+
+                while True:
+                    try:
+                        client._markjobasdone(filtered)
+                    except:
+                        time.sleep(5)
+                        continue
+                    break
+                
+            except Exception as e:
+                print (e)
+                print ("Worker crashed")
+                time.sleep(30)
+        
+        else:
             time.sleep(30)
+        
+        continue
