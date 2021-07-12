@@ -533,7 +533,7 @@ if __name__ == "__main__":
 
                 while True:
                     try:
-                        client._markjobasdone(filtered)
+                        client.completeJob(filtered)
                     except:
                         time.sleep(5)
                         continue
