@@ -92,6 +92,7 @@ def outgoing_worker(queue: JoinableQueue, errors: JoinableQueue, local):
                 
                 if local:
                     #os.system(f"mv {base}/gpujobdone.zip results/{time.time()}.zip")
+
                     aclient.execute(f"echo {filtered} > /home/crawl/gpulocal")
                 else:    
                     base = "./" + str(ip.replace(".", "-"))
@@ -178,6 +179,10 @@ def gpu_worker(inbound: JoinableQueue, outbound: JoinableQueue, counter: Joinabl
             start = time.time()
             final_images, results = clip_filter.filter(concat_parse, concat_fname, "./save/", errors)
             print(f"last filtered {final_images} images in {round(time.time()-start,2)} sec")
+            start = time.time()
+            resp = os.system(f"rsync -zh save/*{concat_fname}* archiveteam@88.198.2.17::CAH")
+            if resp == 0:
+                print (f"results sent to staging in {round(time.time()-start)} sec")
 
             for ip in ips:
                 outbound.put((ip, results.get(ip)))
