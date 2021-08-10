@@ -1,6 +1,6 @@
 ftfy
 pandas
-pycld2
+git+https://github.com/TheoCoombes/pycld2
 trio
 ujson
 asks
