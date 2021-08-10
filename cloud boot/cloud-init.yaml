@@ -39,7 +39,7 @@ write_files:
     rm -rf /home/crawl/*.tar.gz
     cd crawlingathome-gpu-hcloud
     rm worker.py
-    wget https://raw.githubusercontent.com/rvencu/crawlingathome-gpu-hcloud/staged-clients/worker.py
+    wget https://raw.githubusercontent.com/TheoCoombes/crawlingathome-gpu-hcloud/staged-clients/worker.py
     chown crawl:adm -R /home/crawl/
     systemctl restart crawl
 - path: /etc/security/limits.conf
