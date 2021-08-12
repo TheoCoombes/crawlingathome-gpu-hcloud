@@ -89,13 +89,15 @@ def gpu_cah_interface(i:int, incomingqueue: JoinableQueue, outgoingqueue: Joinab
                     while True:
                         if outgoingqueue.qsize() > 0:
                             outjob, pairs = outgoingqueue.get() # I am poping out from queue only if my current job is finished
-                            if pairs > 0:
+                            if pairs >= 0:
                                 #print (f"[io {i}] mark job as complete: {job}")
                                 # cleanup temp storage now
                                 try:
                                     client.completeJob(int(pairs))
                                 except:
                                     client.invalidURL()
+                            else:
+                                client.invalidURL()
                             if os.path.exists("./"+ job):
                                 shutil.rmtree("./"+ job)
                             if os.path.exists(f"{job}.tar.gz"):
@@ -137,7 +139,10 @@ def upload_worker(uploadqueue: JoinableQueue, counter: JoinableQueue, outgoingqu
             if response == 0:
                 #print (f"[io2] sending all jobs to be marked as completed")
                 for i, job, item in shards:
-                    outgoingqueue[i].put((job, results.get(job)))
+                    cnt = results.get(job)
+                    if cnt is None:
+                        cnt = 0
+                    outgoingqueue[i].put((job, cnt))
                     for file in glob((f"save/*{group_id}*")):
                         os.remove(file)
                     counter.put(1)
@@ -150,12 +155,21 @@ def upload_worker(uploadqueue: JoinableQueue, counter: JoinableQueue, outgoingqu
         else:
             time.sleep(10)
 
-def updateBloom():
-    if os.path.exists("blocklists/"):
-        shutil.rmtree("blocklists/")
-    os.makedirs("blocklists/")
+def updateBloom(init=False):
+    if init:
+        if os.path.exists("blocklists/"):
+            shutil.rmtree("blocklists/")
+        os.makedirs("blocklists/")
     #os.system("rsync -zh archiveteam@88.198.2.17::bloom/*.bin blocklists")
-    os.system("rsync -av --partial --inplace --progress archiveteam@88.198.2.17::bloom/*.bin blocklists")
+        os.system("rsync -av --partial --inplace --progress archiveteam@88.198.2.17::bloom/bloom*.bin blocklists")
+    else:
+        os.system("rsync -av --partial --inplace --progress archiveteam@88.198.2.17::bloom/bloom_active.bin blocklists") # bloom_active.bin after freeze
+
+def inbloom(hash, bloom):
+    for filter in bloom:
+        if hash in filter:
+            return True
+    return False
 
 def gpu_worker(incomingqueue: JoinableQueue, uploadqueue: JoinableQueue, gpuflag: JoinableQueue, groupsize: int):
     print (f"[gpu] worker started")
@@ -210,9 +224,10 @@ def gpu_worker(incomingqueue: JoinableQueue, uploadqueue: JoinableQueue, gpuflag
             total = len(group_parse.index)
 
             t.join()
-            bloom = BloomFilter(max_elements=200000000, error_rate=0.05, filename=("blocklists/bloom200M.bin",-1))
+            bloom = [ BloomFilter(max_elements=200000000, error_rate=0.05, filename=(x,-1)) for x in glob("blocklists/bloom*.bin") ]
+            #bloom = BloomFilter(max_elements=200000000, error_rate=0.05, filename=("blocklists/bloom200M.bin",-1))
 
-            group_parse.loc[:,"bloom"] = group_parse.apply(lambda row: hashlib.md5((str(row.URL)+str(row.TEXT)).encode("utf-8")).hexdigest() in bloom, axis=1)
+            group_parse.loc[:,"bloom"] = group_parse.apply(lambda row: inbloom(hashlib.md5((str(row.URL)+str(row.TEXT)).encode("utf-8")).hexdigest(), bloom), axis=1)
             group_parse = group_parse[group_parse["bloom"] == False]
             group_parse.reset_index(inplace=True, drop=True)
             bloomed = len(group_parse.index)
@@ -223,9 +238,9 @@ def gpu_worker(incomingqueue: JoinableQueue, uploadqueue: JoinableQueue, gpuflag
             start = time.time()
             final_images, results = clip_filter.filter(group_parse, group_id, "./save/")
             
-            
             dedupe_ratio = round((duped - total) / duped, 2)
-            print(f"{Fore.GREEN}filtered {final_images} from {bloomed} bloomed from {total} deduped from {duped} (dedupe ratio {dedupe_ratio}) in {round(time.time()-start,2)} sec ({groupsize} ie {round((time.time()-start)/groupsize,2)} s/shrd){Fore.RESET}")
+            print(f"{Fore.GREEN}Got {final_images} images from {bloomed} bloomed from {total} deduped from {duped} (ratio {dedupe_ratio}) in {round(time.time()-start,2)} sec.")
+            print(f"({groupsize} shards were grouped together and average duration per shard was {round((time.time()-start)/groupsize,2)} sec){Fore.RESET}")
 
             #print (f"[gpu] upload group results to rsync target")
             # find most required upload address among the grouped shards
@@ -234,9 +249,9 @@ def gpu_worker(incomingqueue: JoinableQueue, uploadqueue: JoinableQueue, gpuflag
             uploadqueue.put((group_id, upload_address, shards, results))
             
             # dynamic adjustment of groupsize so we can get close to 8000 pairs per group as fast as possible
-            gradient = int((final_images-10000)/3000)
-            groupsize = min( int(5 * first_groupsize) - 5 , groupsize - gradient )
-            groupsize = max( groupsize - gradient, 2 )
+            gradient = int((final_images-20000)/7000)
+            groupsize = min( int(3 * first_groupsize) - 5 , groupsize - gradient )
+            groupsize = max( groupsize - gradient, 3 )
             print (f"groupsize changed to {groupsize}")
             
             gpuflag.get()
@@ -336,6 +351,8 @@ if __name__ == "__main__":
     if not os.path.exists("./save/"):
         os.makedirs("./save/")
 
+    updateBloom(True)
+
     try:
 
         # initial cleanup - delete all working files in case of crash recovery
@@ -361,7 +378,7 @@ if __name__ == "__main__":
         #initialize joinable queues to transfer messages between multiprocess processes
         # Outbound queues, we need one for each io worker
         outbound = []
-        for _ in range(int(5 * groupsize)): # we need 2x IO workers to keep GPU permanently busy
+        for _ in range(int(3 * groupsize)): # we need 2x IO workers to keep GPU permanently busy
              outbound.append(JoinableQueue())
         inbound = JoinableQueue()
         uploadqueue = JoinableQueue()
